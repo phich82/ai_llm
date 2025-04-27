@@ -1,0 +1,13 @@
+langchain
+langchain-community
+langchain-ollama
+langchain-experimental
+neo4j==5.22.0
+tiktoken
+yfiles_jupyter_graphs
+python-dotenv
+json-repair
+langchain-openai
+langchain_core
+
+ipywidgets
