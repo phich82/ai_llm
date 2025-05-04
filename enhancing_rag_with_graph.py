@@ -13,7 +13,6 @@ from langchain_experimental.graph_transformers import LLMGraphTransformer
 from langchain_community.graphs import Neo4jGraph
 from langchain_community.vectorstores import Neo4jVector
 from langchain_community.document_loaders import TextLoader
-# from langchain_community.chat_models import ChatOllama
 from langchain_community.vectorstores.neo4j_vector import remove_lucene_chars
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -57,7 +56,7 @@ if __name__ == '__main__':
     )
 
     # Load text (documents)
-    loader = TextLoader(file_path="dummytext.txt")
+    loader = TextLoader(file_path="dummytext_shorten.txt")
     docs = loader.load()
 
     # Split text into smaller chunks
@@ -84,12 +83,12 @@ if __name__ == '__main__':
     # Convert to graph documents
     graph_documents = llm_transformer.convert_to_graph_documents(documents)
     print(graph_documents[0])
-    
+
     end_time = datetime.now()
     print(f'End date ======> {end_time} ')
     print(f'Processing date (convert_to_graph_documents) ======> {(end_time.microsecond - start_time) / 1000} ')
 
-    # 
+    #
     graph.add_graph_documents(
         graph_documents,
         baseEntityLabel=True,
