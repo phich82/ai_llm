@@ -125,63 +125,109 @@ class OpenChat:
     """
 
     __BASE_URL: str = 'http://localhost:11434/v1'
-    __OLLAMA_API: str = "http://localhost:11434/api/chat"
+    __CHAT_API: str = "http://localhost:11434/api/chat"
     __HEADERS: dict = {"Content-Type": "application/json"}
     __MODEL: str = "llama3.2"
     __CALL_TYPE: str = 'http' # http | ollama | openai
     __API_KEY: str = 'ollama'
+    __IGNORE_BASE_URL: bool = False
 
-    def __init__(self, model: str='llama3.2', api_key: str='ollama', call_type: str='http'):
+    def __init__(self,
+                 ignore_base_url: bool=False,
+                 model: str='llama3.2',
+                 api_key: str='ollama',
+                 call_type: str='http'):
         self.__MODEL = model
         self.__API_KEY = api_key
         self.__CALL_TYPE = call_type
+        self.__IGNORE_BASE_URL = ignore_base_url
 
 
-    def send(self, message: str=None, stream: bool=False) -> ResponseChat:
-        """_summary_
+    def send(self,
+             message: str=None,
+             user_prompt: str=None,
+             system_prompt: str=None,
+             stream: bool=False,
+             response_format: str='text') -> ResponseChat:
+        """Send questions
 
         Args:
-            payload (Any): _description_
+            message (str): user message
+            user_prompt (str): user message
+            system_prompt (str): system message
+            stream (bool): streamed or not
+            response_format (str): text | json_object | json_schema
         """
 
         messages = [
-            { "role": "user", "content": message }
+            # { "role": "user", "content": message }
         ]
+
+        if system_prompt != None:
+            messages.append({'role': 'system', 'content': system_prompt})
+
+        if user_prompt != None:
+            messages.append({'role': 'user', 'content': user_prompt})
+        elif message != None:
+            messages.append({'role': 'user', 'content': message})
 
         print(f'Calling via {self.__CALL_TYPE}')
         print(f'Model used: {self.__MODEL}')
+        print(f'Message: {len(messages)}')
+        print(f'Ignore base url: {self.__IGNORE_BASE_URL}')
 
-        if self.__CALL_TYPE == 'ollama': # Using ollama
+        # 1. Using ollama
+        if self.__CALL_TYPE == 'ollama':
             response: ollama.ChatResponse = ollama.chat(model=self.__MODEL, messages=messages, stream=stream)
+
+            # If streamed
+            if stream:
+                return response
+
             message_chat: ResponseMessageChat = ResponseMessageChat(
                 role=response['message']['role'],
                 content=response['message']['content']
             )
             response_chat: ResponseChat = ResponseChat(model=self.__MODEL, message=message_chat)
             return response_chat
-        elif self.__CALL_TYPE == 'openai': # Using OpenAI
-            ollama_via_openai = OpenAI(base_url=self.__BASE_URL, api_key=self.__API_KEY)
-            response: ChatCompletion = ollama_via_openai.chat.completions.create(
+        # 2. Using OpenAI
+        elif self.__CALL_TYPE == 'openai':
+            if self.__IGNORE_BASE_URL:
+                openai = OpenAI(api_key=self.__API_KEY)
+            else:
+                openai = OpenAI(base_url=self.__BASE_URL, api_key=self.__API_KEY)
+            response: ChatCompletion = openai.chat.completions.create(
                 model=self.__MODEL,
-                messages=messages
+                messages=messages,
+                response_format={"type": response_format},
+                stream=stream
             )
+
+            # If streamed
+            if stream:
+                return response
+
             response_chat: ResponseChat = ResponseChat()
 
             if response is not None and len(response.choices) > 0:
-                message_chat: ResponseMessageChat = ResponseMessageChat(
+                response_chat.message = ResponseMessageChat(
                     role=response.choices[0].message.role,
                     content=response.choices[0].message.content
                 )
-                response_chat.message = message_chat
             return response_chat
-        elif self.__CALL_TYPE == 'http': # Using http (call direct http)
+        # 3. Using http (call direct http)
+        elif self.__CALL_TYPE == 'http':
             payload = {
                 "model": self.__MODEL,
                 "messages": messages,
                 "stream": stream
             }
             try:
-                response = requests.post(self.__OLLAMA_API, json=payload, headers=self.__HEADERS, verify=False, timeout=5000).json()
+                response = requests.post(self.__CHAT_API, json=payload, headers=self.__HEADERS, verify=False, timeout=5000).json()
+
+                # If streamed
+                if stream:
+                    return response
 
                 message_chat: ResponseMessageChat = ResponseMessageChat(
                     response['message']['role'],
