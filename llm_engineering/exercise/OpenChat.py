@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from json import JSONDecodeError
-from openai import OpenAI
+from typing import List
+from openai import NOT_GIVEN, OpenAI
 from openai.types.chat import ChatCompletion
 import requests
 import ollama
@@ -19,13 +20,14 @@ class ResponseMessageChat(tuple):
     role: str
     content: str
 
-    def __new__(cls, role: str=None, content: str=None):
-        return tuple.__new__(cls, [role, content])
+    def __new__(cls, role: str=None, content: str=None, finish_reason: str=None):
+        return tuple.__new__(cls, [role, content, finish_reason])
 
-    def __init__(self, role: str=None, content: str=None):
-        tuple.__init__([role, content])
+    def __init__(self, role: str=None, content: str=None, finish_reason: str=None):
+        tuple.__init__([role, content, finish_reason])
         self.role = role
         self.content = content
+        self.finish_reason = finish_reason
 
 @dataclass
 class ResponseChat(tuple):
@@ -48,6 +50,7 @@ class ResponseChat(tuple):
     eval_count: int
     eval_duration: int
     message: ResponseMessageChat
+    origin_response: object
 
     def __new__(cls,
                 model: str=None,
@@ -148,7 +151,8 @@ class OpenChat:
              user_prompt: str=None,
              system_prompt: str=None,
              stream: bool=False,
-             response_format: str='text') -> ResponseChat:
+             response_format: str='text',
+             tools: list=None) -> ResponseChat:
         """Send questions
 
         Args:
@@ -159,9 +163,7 @@ class OpenChat:
             response_format (str): text | json_object | json_schema
         """
 
-        messages = [
-            # { "role": "user", "content": message }
-        ]
+        messages = []
 
         if system_prompt != None:
             messages.append({'role': 'system', 'content': system_prompt})
@@ -178,7 +180,10 @@ class OpenChat:
 
         # 1. Using ollama
         if self.__CALL_TYPE == 'ollama':
-            response: ollama.ChatResponse = ollama.chat(model=self.__MODEL, messages=messages, stream=stream)
+            response: ollama.ChatResponse = ollama.chat(model=self.__MODEL,
+                                                        messages=messages,
+                                                        stream=stream,
+                                                        tools=tools)
 
             # If streamed
             if stream:
@@ -189,6 +194,7 @@ class OpenChat:
                 content=response['message']['content']
             )
             response_chat: ResponseChat = ResponseChat(model=self.__MODEL, message=message_chat)
+            response_chat.origin_response = response
             return response_chat
         # 2. Using OpenAI
         elif self.__CALL_TYPE == 'openai':
@@ -200,7 +206,8 @@ class OpenChat:
                 model=self.__MODEL,
                 messages=messages,
                 response_format={"type": response_format},
-                stream=stream
+                stream=stream,
+                tools=tools
             )
 
             # If streamed
@@ -208,6 +215,7 @@ class OpenChat:
                 return response
 
             response_chat: ResponseChat = ResponseChat()
+            response_chat.origin_response = response
 
             if response is not None and len(response.choices) > 0:
                 response_chat.message = ResponseMessageChat(
@@ -247,6 +255,7 @@ class OpenChat:
                     response['eval_duration'],
                     message_chat
                 )
+                response_chat.origin_response = response
                 return response_chat
             except Exception as e:
                 # Wrong UTF codec detected
@@ -260,3 +269,111 @@ class OpenChat:
         raise Exception(f'Call type not support: {self.__CALL_TYPE}')
 
 
+    def send2(self,
+              messages: list=None,
+              stream: bool=False,
+              response_format: str='text',
+              tools: list=NOT_GIVEN) -> ResponseChat:
+        """Send questions
+
+        Args:
+            messages (list): Messages
+            stream (bool): streamed or not
+            response_format (str): text | json_object | json_schema
+        """
+
+        print(f'Calling via {self.__CALL_TYPE}')
+        print(f'Model used: {self.__MODEL}')
+        print(f'Message: {len(messages)}')
+        print(f'Ignore base url: {self.__IGNORE_BASE_URL}')
+
+        # 1. Using ollama
+        if self.__CALL_TYPE == 'ollama':
+            response: ollama.ChatResponse = ollama.chat(model=self.__MODEL,
+                                                        messages=messages,
+                                                        stream=stream,
+                                                        tools=tools)
+
+            # If streamed
+            if stream:
+                return response
+
+            message_chat: ResponseMessageChat = ResponseMessageChat(
+                role=response['message']['role'],
+                content=response['message']['content']
+            )
+            response_chat: ResponseChat = ResponseChat(model=self.__MODEL, message=message_chat)
+            response_chat.origin_response = response
+            return response_chat
+        # 2. Using OpenAI
+        elif self.__CALL_TYPE == 'openai':
+            if self.__IGNORE_BASE_URL:
+                openai = OpenAI(api_key=self.__API_KEY)
+            else:
+                openai = OpenAI(base_url=self.__BASE_URL, api_key=self.__API_KEY)
+            response: ChatCompletion = openai.chat.completions.create(
+                model=self.__MODEL,
+                messages=messages,
+                response_format={"type": response_format},
+                stream=stream,
+                tools=tools
+            )
+
+            # If streamed
+            if stream:
+                return response
+
+            response_chat: ResponseChat = ResponseChat()
+
+            if response is not None and len(response.choices) > 0:
+                response_chat.origin_response = response
+                response_chat.message = ResponseMessageChat(
+                    role=response.choices[0].message.role,
+                    content=response.choices[0].message.content,
+                    finish_reason=response.choices[0].finish_reason
+                )
+            return response_chat
+        # 3. Using http (call direct http)
+        elif self.__CALL_TYPE == 'http':
+            payload = {
+                "model": self.__MODEL,
+                "messages": messages,
+                "stream": stream
+            }
+            try:
+                response = requests.post(self.__CHAT_API, json=payload, headers=self.__HEADERS, verify=False, timeout=5000).json()
+
+                # If streamed
+                if stream:
+                    return response
+
+                message_chat: ResponseMessageChat = ResponseMessageChat(
+                    response['message']['role'],
+                    response['message']['content']
+                )
+
+                response_chat: ResponseChat = ResponseChat(
+                    response['model'],
+                    response['created_at'],
+                    response['done_reason'],
+                    response['done'],
+                    response['total_duration'],
+                    response['load_duration'],
+                    response['prompt_eval_count'],
+                    response['prompt_eval_duration'],
+                    response['eval_count'],
+                    response['eval_duration'],
+                    message_chat
+                )
+                response_chat.origin_response = response
+                return response_chat
+            except Exception as e:
+                # Wrong UTF codec detected
+                if isinstance(e, UnicodeDecodeError):
+                    raise Exception('Wrong UTF codec detected.')
+                # Catch JSON-related errors
+                if  isinstance(e, JSONDecodeError):
+                    raise Exception('Invalid json')
+                print(f'Exception: {e}')
+                raise Exception('Could not parse to json format.')
+        raise Exception(f'Call type not support: {self.__CALL_TYPE}')

@@ -1,1 +1,8 @@
 anthropic
+python-interface
+
+# Website UI
+gradio
+
+# Audio
+PyAudio
