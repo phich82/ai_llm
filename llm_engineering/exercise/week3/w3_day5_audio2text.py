@@ -48,9 +48,10 @@ quant_config = BitsAndBytesConfig(
 
 tokenizer = AutoTokenizer.from_pretrained(LLAMA)
 tokenizer.pad_token = tokenizer.eos_token
-inputs = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device)
 streamer = TextStreamer(tokenizer)
 model = AutoModelForCausalLM.from_pretrained(LLAMA, device_map="auto", quantization_config=quant_config)
+
+inputs = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device)
 outputs = model.generate(inputs, max_new_tokens=2000, streamer=streamer)
 
 response = tokenizer.decode(outputs[0])
@@ -94,6 +95,7 @@ def audio2text2(audio_file: str, system_message: str, user_prompt: str, device: 
     outputs = model.generate(inputs, max_new_tokens=2000, streamer=streamer)
 
     response = tokenizer.decode(outputs[0])
+    # display(Markdown(response))
 
     return response
 
@@ -124,33 +126,41 @@ def audio2text(audio_file: str, device: str='cpu', model: str='openai/whisper-me
     return transcription
 
 
-# define helper function to load model and tokenizer
+# Load model and tokenizer
 def load_model(model_name):
-  quant_config = BitsAndBytesConfig(
-      load_in_4bit=True,
-      bnb_4bit_use_double_quant=True,
-      bnb_4bit_compute_dtype=torch.bfloat16,
-      bnb_4bit_quant_type="nf4"
-  )
-  tokenizer = AutoTokenizer.from_pretrained(model_name)
-  tokenizer.pad_token = tokenizer.eos_token
-  model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", quantization_config=quant_config)
-  return tokenizer, model
+    quant_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type='nf4'
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(model_name, device_map='auto', quantization_config=quant_config)
+    return tokenizer, model
 
 # define different generating functions:
 #   1- full response
 #   2- low level streaming response
 #   3- low level streaming response
 
-def generate_full(tokenizer, model, user_input, max_tokens=2000, device: str='cpu'):
-  global messages
-  # Append the user's new message to the conversation history
-  messages.append({"role": "user", "content": user_input})
+def generate_full(tokenizer: AutoTokenizer,
+                  model: AutoModelForCausalLM,
+                  user_input: str,
+                  max_tokens: int=2000,
+                  device: str='cpu'):
+    global messages
+    # Append the user's new message to the conversation history
+    messages.append({"role": "user", "content": user_input})
 
-  inputs = tokenizer.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True).to(device)
-  outputs = model.generate(inputs, max_new_tokens=max_tokens)
-  response = tokenizer.decode(outputs[0])
-  print(response)
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        return_tensors="pt",
+        add_generation_prompt=True
+    ).to(device)
+    outputs = model.generate(inputs, max_new_tokens=max_tokens)
+    response = tokenizer.decode(outputs[0])
+    return response
 
 def generate_stream_low_level(tokenizer, model, user_input, max_tokens=2000):
     global messages
@@ -158,7 +168,11 @@ def generate_stream_low_level(tokenizer, model, user_input, max_tokens=2000):
     messages.append({"role": "user", "content": user_input})
 
     # Prepare the initial input
-    input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True).to("cuda")
+    input_ids = tokenizer.apply_chat_template(
+        messages,
+        return_tensors="pt",
+        add_generation_prompt=True
+    ).to("cuda")
 
     # Generate up to 2000 tokens
     for _ in range(max_tokens):
@@ -175,7 +189,6 @@ def generate_stream_low_level(tokenizer, model, user_input, max_tokens=2000):
 
         if next_token_id.item() == tokenizer.eos_token_id:  # Stop if EOS token
             break
-    print()
 
 def generate_stream_high_level(tokenizer, model, user_input, max_tokens=2000, device='cpu'):
     global messages
@@ -209,7 +222,7 @@ def generate_stream_high_level(tokenizer, model, user_input, max_tokens=2000, de
         print(filtered_chunk, end="")  # Print without adding new lines
 
 
-# call the helper function and load the model and tokenizer
+# Load the model and tokenizer
 tokenizer, model = load_model(LLAMA)
 
 # initialize the messages history, the max tokens for the model, and the user_input

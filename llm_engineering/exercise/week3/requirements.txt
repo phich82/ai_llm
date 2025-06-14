@@ -9,3 +9,9 @@ openai
 # httpx==0.27.2
 httpx
 gradio
+
+# huggingface
+huggingface_hub
+transformers
+diffusers
+soundfile
