@@ -225,12 +225,57 @@ class ChatAI:
                 ),
             ]
         )
+        # Use LCEL (LangChain Expression Language)
+        # LCEL as a "chain". It's important to remember that a "chain" is Runnable and it implements the full Runnable Interface
+        # 1. Composition Primitives
+        # 1.1 RunnableSequence
+        # from langchain_core.runnables import RunnableSequence
+        # chain = RunnableSequence([runnable1, runnable2])
+        # final_output = chain.invoke(some_input)
+        # # corresponds to the following:
+        # output1 = runnable1.invoke(some_input)
+        # final_output = runnable2.invoke(output1)
+        # 1.2 RunnableParallel
+        # from langchain_core.runnables import RunnableParallel
+        # chain = RunnableParallel({
+        #     "key1": runnable1,
+        #     "key2": runnable2,
+        # })
+        # final_output = chain.invoke(some_input)
+        # # corresponds to the following:
+        # output = {
+        #     "key1": runnable1.invoke(some_input),
+        #     "key2": runnable2.invoke(some_input),
+        # }
+        # 2. Composition Syntax
+        # 2.1 The | operator
+        # chain = runnable1 | runnable2
+        # # is Equivalent to:
+        # chain = RunnableSequence([runnable1, runnable2])
+        # 2.2 The .pipe method
+        # chain = runnable1.pipe(runnable2)
+        # 3. Coercion
+        # 3.1 Dictionary to RunnableParallel
+        # mapping = {
+        #     "key1": runnable1,
+        #     "key2": runnable2,
+        # }
+        # chain = mapping | runnable3
+        # # converted automatically to the following:
+        # chain = RunnableSequence([RunnableParallel(mapping), runnable3])
+        # 3.2 Function to RunnableLambda
+        # def some_func(x):
+        #     return x
+        # chain = some_func | runnable1
+        # # automatically converted to the following:
+        # chain = RunnableSequence([RunnableLambda(some_func), runnable1])
+
         chain = prompt_template | self.db.llm.with_structured_output(Entities)
         # Output
         output: Output = chain.invoke({"question": question}) # ~ entity_chain.invoke(question)
         print(f'[chat] output ===> {output}')
         print(f'[chat] names ===> {output.names}')
-        print("[chat] graph_retriever ===> " + self.graph_retriever(question=question, chain=chain))
+        print(f'[chat] graph_retriever ===> {self.graph_retriever(question=question, chain=chain)}')
 
         # 2. Using template message
         template = """Answer the question based only on the following context:
@@ -240,17 +285,25 @@ class ChatAI:
         Use natural language and be concise.
         Answer:"""
         prompt_template = ChatPromptTemplate.from_template(template)
+        # prompt_template.format(context=self.full_retriever(question=question, chain=chain), question=question)
+        # Use LCEL (LangChain Expression Language)
+        # LCEL as a "chain". It's important to remember that a "chain" is Runnable and it implements the full Runnable Interface
         chain = (
             {
-                "context": self.full_retriever(question=question, chain=chain), # self.full_retriever
-                "question": RunnablePassthrough(),
+                "context": self.full_retriever,
+                "question": RunnablePassthrough(), # `question passed to function (self.full_retriever)
+                "chain": RunnablePassthrough(), # `chain` passed to function (self.full_retriever)
             }
             | prompt_template
             | self.db.llm
             | StrOutputParser()
         )
         # Output
-        output: Output = chain.invoke({'question': question}) # ~ chain.invoke(input=question)
+        # input = {'question': question, 'chain': chain} ---> mapping to:
+        # "question": RunnablePassthrough() => question = input['question']
+        # "chain": RunnablePassthrough()    => chain = input['chain']
+        # "context": self.full_retriever    => self.full_retriever(question=question, chain=chain)
+        output: Output = chain.invoke({'question': question, 'chain': chain}) # ~ chain.invoke(input=question)
         print(f'[chat] output: {output}')
         print(f'[chat] end ======> {datetime.now()} ')
 
