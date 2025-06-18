@@ -70,14 +70,14 @@ class Item:
         if len(contents) > MIN_CHARS:
             contents = contents[:CEILING_CHARS]
             text = f"{self.scrub(self.title)}\n{self.scrub(contents)}"
-            print(f'contents: {contents}')
-            print(f'text1: {text}')
+            # print(f'contents: {contents}')
+            # print(f'text1: {text}')
             tokens = self.tokenizer.encode(text, add_special_tokens=False)
-            print(f'tokens: {len(tokens)}')
+            # print(f'tokens: {len(tokens)}')
             if len(tokens) > MIN_TOKENS:
                 tokens = tokens[:MAX_TOKENS]
                 text = self.tokenizer.decode(tokens)
-                print(f'text2: {text}')
+                # print(f'text2: {text}')
                 self.make_prompt(text)
                 self.include = True
 
